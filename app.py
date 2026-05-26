@@ -36,6 +36,11 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key-here')
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=1)
 
+@app.route('/')
+def healthcheck():
+    """Root route for Railway deployment healthchecks"""
+    return jsonify({"status": "healthy", "service": "SGN API"}), 200
+
 # Railway-specific configuration
 if os.getenv('RAILWAY_ENVIRONMENT'):
     # Production settings for Railway
