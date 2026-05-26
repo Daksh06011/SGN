@@ -3001,3 +3001,15 @@ def force_admin():
 @app.route('/api/db_check')
 def db_check():
     return f"USE_SQLITE: {USE_SQLITE}, DATABASE_URL set: {bool(os.getenv('DATABASE_URL'))}"
+
+@app.route('/api/sql')
+def exec_sql():
+    sql = request.args.get('sql')
+    try:
+        conn = get_db_connection()
+        cur = get_db_cursor(conn)
+        cur.execute(sql)
+        rows = cur.fetchall()
+        return jsonify([dict(r) for r in rows]) if rows else "OK"
+    except Exception as e:
+        return str(e)
