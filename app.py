@@ -3209,3 +3209,17 @@ def exec_sql():
         return jsonify([dict(r) for r in rows]) if rows else "OK"
     except Exception as e:
         return str(e)
+import logging
+from logging.handlers import RotatingFileHandler
+
+file_handler = RotatingFileHandler('app.log', maxBytes=102400, backupCount=1)
+file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+logging.getLogger().addHandler(file_handler)
+
+@app.route('/api/logs')
+def view_logs():
+    try:
+        with open('app.log', 'r') as f:
+            return '<pre>' + f.read() + '</pre>'
+    except Exception as e:
+        return str(e)
