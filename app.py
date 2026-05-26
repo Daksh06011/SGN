@@ -2990,7 +2990,7 @@ def force_admin():
         cur.execute("SELECT id FROM dust_data_sources WHERE id = 1")
         if not cur.fetchone():
             cur.execute("""
-                INSERT INTO dust_data_sources (id, name, source_type, broker_url, username, password)
+                INSERT INTO dust_data_sources (id, description, source_type, broker_url, username, password)
                 VALUES (1, 'HiveMQ Public Broker', 'mqtt', 'broker.hivemq.com', 'Daksh', 'Sgn@1234')
             """)
         conn.commit()
