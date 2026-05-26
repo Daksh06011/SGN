@@ -2993,3 +2993,7 @@ def force_admin():
         return "SUCCESS"
     except Exception as e:
         return str(e)
+
+@app.route('/api/db_check')
+def db_check():
+    return f"USE_SQLITE: {USE_SQLITE}, DATABASE_URL set: {bool(os.getenv('DATABASE_URL'))}"
