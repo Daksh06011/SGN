@@ -1647,7 +1647,7 @@ def login():
         user_data = cur.fetchone()
 
         if user_data and check_password_hash(user_data['password_hash'], password):
-            access_token = create_access_token(identity=user_data['id'])
+            access_token = create_access_token(identity=str(user_data['id']))
             return jsonify({
                 'success': True, 
                 'token': access_token,
@@ -1661,6 +1661,8 @@ def login():
             return jsonify({'success': False, 'error': 'Invalid username or password'}), 401
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         logging.error(f"Login error: {e}")
         return jsonify({'success': False, 'error': 'Internal server error'}), 500
     finally:
@@ -1719,24 +1721,27 @@ def register():
                    VALUES (%s, %s, %s, FALSE) RETURNING id, username, email""",
                 (username, email, password_hash)
             )
-            conn.commit()
             user_data = cur.fetchone()
+            conn.commit()
 
         if user_data:
-            access_token = create_access_token(identity=user_data['id'])
+            access_token = create_access_token(identity=str(user_data['id']))
             return jsonify({
                 'success': True, 
                 'token': access_token,
                 'user': {
                     'id': user_data['id'],
                     'username': user_data['username'],
+                    'email': user_data['email'],
                     'is_admin': False
                 }
             }), 201
         else:
-            return jsonify({'success': False, 'error': 'Error creating user account'}), 500
+            return jsonify({'success': False, 'error': 'Failed to create user'}), 500
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         logging.error(f"Registration error: {e}")
         return jsonify({'success': False, 'error': 'Internal server error'}), 500
     finally:
