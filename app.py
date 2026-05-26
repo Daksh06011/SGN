@@ -386,10 +386,21 @@ def initialize_database():
                 gps_lon DOUBLE PRECISION,
                 gps_alt_m DOUBLE PRECISION,
                 gps_speed_kmh DOUBLE PRECISION,
-                cloud_cover_percent DOUBLE PRECISION
+                cloud_cover_percent DOUBLE PRECISION,
+                lux DOUBLE PRECISION,
+                uv_index DOUBLE PRECISION,
+                battery_percent DOUBLE PRECISION
             )
             """)
             conn.commit()
+
+            # Ensure admin password is valid
+            try:
+                admin_hash = generate_password_hash('admin123')
+                cur.execute("UPDATE dust_users SET password_hash = %s WHERE username = 'admin'", (admin_hash,))
+                conn.commit()
+            except Exception as e:
+                logging.error(f"Failed to reset admin password: {e}")
 
     except Exception as e:
         logging.error(f"Database initialization failed: {e}")
