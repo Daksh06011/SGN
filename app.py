@@ -2982,6 +2982,13 @@ def force_admin():
             cur.execute("UPDATE dust_users SET password_hash = %s WHERE username = 'admin'", (admin_hash,))
         else:
             cur.execute("INSERT INTO dust_users (username, email, password_hash, is_admin) VALUES ('admin', 'admin@example.com', %s, TRUE)", (admin_hash,))
+            
+        cur.execute("SELECT id FROM dust_data_sources WHERE id = 1")
+        if not cur.fetchone():
+            cur.execute("""
+                INSERT INTO dust_data_sources (id, name, source_type, broker_url, username, password)
+                VALUES (1, 'HiveMQ Public Broker', 'mqtt', 'broker.hivemq.com', 'Daksh', 'Sgn@1234')
+            """)
         conn.commit()
         return "SUCCESS"
     except Exception as e:

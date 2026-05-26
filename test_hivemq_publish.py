@@ -31,8 +31,8 @@ payload = {
 
 def on_connect(client, userdata, flags, rc):
     print(f"Connected with result code {rc}")
-    client.publish(topic, json.dumps(payload))
-    print(f"Published exact payload to {topic}")
+    client.publish("SGN/devices/xiao-cam-01/sensors", payload=json.dumps(payload))
+    print("Published exact payload to SGN/devices/xiao-cam-01/sensors")
 
 client = mqtt.Client()
 client.username_pw_set("Daksh", "Sgn@1234")
