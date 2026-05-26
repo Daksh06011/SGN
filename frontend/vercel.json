@@ -2,7 +2,7 @@
   "rewrites": [
     {
         "source": "/api/:match*",
-        "destination": "https://<RAILWAY_BACKEND_URL>/api/:match*"
+        "destination": "https://reasonable-wonder-production-c57e.up.railway.app/api/:match*"
       }
   ]
 }
