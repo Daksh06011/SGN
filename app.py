@@ -143,9 +143,13 @@ if USE_SQLITE:
     sqlite_db_path = 'pm_monitoring.db'
     
     def init_sqlite_db():
-        conn = sqlite3.connect(sqlite_db_path)
+        conn = sqlite3.connect(sqlite_db_path, timeout=30.0)
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
+        
+        # Enable WAL mode for concurrent access
+        cur.execute("PRAGMA journal_mode=WAL")
+        conn.commit()
         
         # Create tables
         cur.execute('''CREATE TABLE IF NOT EXISTS dust_users (
@@ -260,7 +264,7 @@ def get_db_connection():
     """Get database connection with error handling"""
     try:
         if USE_SQLITE:
-            conn = sqlite3.connect('pm_monitoring.db')
+            conn = sqlite3.connect('pm_monitoring.db', timeout=30.0)
             conn.row_factory = sqlite3.Row
             return conn
         else:
