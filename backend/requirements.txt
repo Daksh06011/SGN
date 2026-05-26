@@ -1,0 +1,12 @@
+gevent
+gevent-websocket
+Flask>=3.1.0
+Flask-SocketIO
+Flask-Caching
+Flask-JWT-Extended
+Flask-Cors
+paho-mqtt
+python-dotenv
+psycopg2-binary
+requests
+gunicorn

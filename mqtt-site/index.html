@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>MQTT Live Data</title>
+
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+
+  <style>
+    body{
+      font-family: Arial;
+      text-align:center;
+      margin-top:50px;
+    }
+
+    .box{
+      width:300px;
+      margin:auto;
+      padding:20px;
+      border-radius:10px;
+      background:#f2f2f2;
+      box-shadow:0 0 10px rgba(0,0,0,0.2);
+    }
+
+    h1{
+      color:#333;
+    }
+
+    #temp{
+      font-size:50px;
+      color:blue;
+    }
+  </style>
+</head>
+
+<body>
+
+<div class="box">
+  <h1>Temp</h1>
+  <div id="temp">--</div>
+  <div id="source" style="margin-top:12px;font-size:12px;color:#666;">
+    Source: xiao/dashboard on HiveMQ Cloud
+  </div>
+</div>
+
+<script>
+
+  // CONNECT TO MQTT BROKER
+  const client = mqtt.connect('wss://fb1f89b92da34734b1ca59ef89f2dbfa.s1.eu.hivemq.cloud:8884/mqtt', {
+    username: 'Daksh',
+    password: 'Sgn@1234',
+    clean: true,
+    reconnectPeriod: 1000
+  });
+
+  // WHEN CONNECTED
+  client.on('connect', () => {
+
+    console.log('Connected to MQTT');
+
+    // SUBSCRIBE TO TOPIC
+    client.subscribe("xiao/dashboard");
+  });
+
+  function extractTempValue(payloadText) {
+    const data = payloadText.trim();
+    const directValue = Number(data);
+
+    if (Number.isFinite(directValue)) {
+      return String(directValue);
+    }
+
+    try {
+      const payload = JSON.parse(data);
+
+      const candidates = [
+        Array.isArray(payload?.e) ? payload.e[0] : undefined,
+        payload?.Temperature_C,
+        payload?.temperature_c,
+        payload?.temperature,
+        payload?.temp,
+      ];
+
+      for (const candidate of candidates) {
+        if (candidate === undefined || candidate === null || candidate === "") {
+          continue;
+        }
+
+        const tempNumber = Number(candidate);
+        if (Number.isFinite(tempNumber)) {
+          return String(tempNumber);
+        }
+
+        return String(candidate);
+      }
+    } catch (error) {
+      // Ignore non-JSON payloads and fall back to the raw value.
+    }
+
+    return data;
+  }
+
+  // WHEN MESSAGE RECEIVED
+  client.on('message', (topic, message) => {
+
+    // SHOW DATA ON WEBSITE
+    document.getElementById("temp")
+      .innerText = extractTempValue(message.toString());
+  });
+
+  // ERROR HANDLER
+  client.on('error', (err) => {
+    console.log('MQTT Error:', err);
+  });
+
+</script>
+
+</body>
+</html>
