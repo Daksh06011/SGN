@@ -1662,9 +1662,9 @@ def login():
 
     except Exception as e:
         import traceback
-        traceback.print_exc()
-        logging.error(f"Login error: {e}")
-        return jsonify({'success': False, 'error': 'Internal server error'}), 500
+        tb = traceback.format_exc()
+        logging.error(f"Login error: {tb}")
+        return jsonify({'success': False, 'error': f'Internal server error: {str(e)}', 'traceback': tb}), 500
     finally:
         if 'conn' in locals() and conn:
             put_db_connection(conn)
@@ -1741,9 +1741,9 @@ def register():
 
     except Exception as e:
         import traceback
-        traceback.print_exc()
-        logging.error(f"Registration error: {e}")
-        return jsonify({'success': False, 'error': 'Internal server error'}), 500
+        tb = traceback.format_exc()
+        logging.error(f"Registration error: {tb}")
+        return jsonify({'success': False, 'error': f'Internal server error: {str(e)}', 'traceback': tb}), 500
     finally:
         if 'conn' in locals() and conn:
             put_db_connection(conn)
