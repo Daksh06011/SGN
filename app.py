@@ -117,7 +117,7 @@ def user_lookup_callback(_jwt_header, jwt_data):
             cur.row_factory = sqlite3.Row
         else:
             cur = conn.cursor(cursor_factory=RealDictCursor)
-        cur.execute("SELECT id, username, email, is_admin FROM dust_users WHERE id = %s" if not USE_SQLITE else "SELECT id, username, email, is_admin FROM dust_users WHERE id = ?", (identity,))
+        cur.execute("SELECT id, username, email, is_admin FROM dust_users WHERE id = %s" if not USE_SQLITE else "SELECT id, username, email, is_admin FROM dust_users WHERE id = %s", (identity,))
         row = cur.fetchone()
         cur.close()
         if row:
@@ -417,17 +417,28 @@ def process_extended_device_data(payload, device_id, timestamp, data_source_id):
         # Get or validate device
         cur.execute("""
             SELECT id FROM dust_devices
-            WHERE deviceid = ? AND data_source_id = ?
+            WHERE deviceid = %s AND data_source_id = %s
         """, (device_id, data_source_id))
         row = cur.fetchone()
         
         if not row:
-            logging.warning(f"[EXTENDED] Unauthorized device: {device_id} for source: {data_source_id}")
-            # Let's also check what devices exist
-            cur.execute("SELECT deviceid, data_source_id FROM dust_devices")
-            existing_devices = cur.fetchall()
-            logging.info(f"[EXTENDED] Existing devices: {existing_devices}")
-            return
+            logging.warning(f"[EXTENDED] Unauthorized device: {device_id} for source: {data_source_id}. Auto-creating...")
+            if USE_SQLITE:
+                cur.execute("""
+                    INSERT INTO dust_devices (deviceid, name, user_id, has_relay, data_source_id)
+                    VALUES (%s, %s, 1, 0, %s)
+                """, (device_id, device_id, data_source_id))
+                conn.commit()
+                cur.execute("SELECT id FROM dust_devices WHERE deviceid = %s AND data_source_id = %s", (device_id, data_source_id))
+                row = cur.fetchone()
+            else:
+                cur.execute("""
+                    INSERT INTO dust_devices (deviceid, name, user_id, has_relay, data_source_id)
+                    VALUES (%s, %s, 1, FALSE, %s) RETURNING id
+                """, (device_id, device_id, data_source_id))
+                row = cur.fetchone()
+                conn.commit()
+
 
         device_id_db = row[0]
         logging.info(f"[EXTENDED] Found device in DB with ID: {device_id_db}")
@@ -606,7 +617,7 @@ def process_compact_format_data(payload, device_id_db, timestamp, data_source_id
             """
             INSERT INTO dust_sensor_data
             (timestamp, device_id, data_source_id, pm1, pm2_5, pm4, pm10, tsp)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 timestamp,
@@ -667,7 +678,7 @@ def process_hivemq_data(payload, device_id_db, timestamp, data_source_id, cur):
             """
             INSERT INTO dust_sensor_data
             (timestamp, device_id, data_source_id, pm1, pm2_5, pm4, pm10, tsp)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 timestamp,
@@ -963,8 +974,23 @@ def process_sensor_data(payload, device_id, timestamp, data_source_id):
 
         if not device:
             # Create device with admin user as owner
-            logging.warning(f"Unauthorized device creation attempted: {device_id}")
-            return
+            logging.warning(f"Unauthorized device creation attempted: {device_id}. Auto-creating...")
+            if USE_SQLITE:
+                cur.execute("""
+                    INSERT INTO dust_devices (deviceid, name, user_id, has_relay, data_source_id)
+                    VALUES (%s, %s, 1, 0, %s)
+                """, (device_id, device_id, data_source_id))
+                conn.commit()
+                cur.execute("SELECT id, user_id, has_relay FROM dust_devices WHERE deviceid = %s AND data_source_id = %s", (device_id, data_source_id))
+                device = cur.fetchone()
+            else:
+                cur.execute("""
+                    INSERT INTO dust_devices (deviceid, name, user_id, has_relay, data_source_id)
+                    VALUES (%s, %s, 1, FALSE, %s) RETURNING id, user_id, has_relay
+                """, (device_id, device_id, data_source_id))
+                device = cur.fetchone()
+                conn.commit()
+
         device_id_db = device[0]
         user_id = device[1]
         has_relay = device[2]
@@ -1144,7 +1170,7 @@ def emit_websocket_update(device_id):
         cur.execute("""
             SELECT timestamp, pm1, pm2_5, pm4, pm10, tsp
             FROM dust_sensor_data
-            WHERE device_id = ?
+            WHERE device_id = %s
             ORDER BY timestamp DESC
             LIMIT 1
         """, (device_id,))
@@ -1155,7 +1181,7 @@ def emit_websocket_update(device_id):
 
 
 
-        cur.execute("SELECT has_relay FROM dust_devices WHERE id = ?", (device_id,))
+        cur.execute("SELECT has_relay FROM dust_devices WHERE id = %s", (device_id,))
         row = cur.fetchone()
         has_relay = row['has_relay'] if row else False
 
@@ -1193,7 +1219,7 @@ def emit_websocket_update(device_id):
             cur.execute("""
                 SELECT *
                 FROM dust_extended_data
-                WHERE device_id = ?
+                WHERE device_id = %s
                 ORDER BY timestamp DESC
                 LIMIT 1
             """, (device_id,))
@@ -1207,7 +1233,7 @@ def emit_websocket_update(device_id):
             logging.warning(f"Could not fetch extended data for device {device_id}: {e}")
 
         # Prepare data for WebSocket
-        cur.execute("SELECT user_id FROM dust_devices WHERE id = ?", (device_id,))
+        cur.execute("SELECT user_id FROM dust_devices WHERE id = %s", (device_id,))
         user_row = cur.fetchone()
         if user_row:
             user_id = user_row['user_id']
@@ -1272,7 +1298,7 @@ def emit_extended_websocket_update(device_id):
         cur.execute("""
             SELECT *
             FROM dust_extended_data
-            WHERE device_id = ?
+            WHERE device_id = %s
             ORDER BY timestamp DESC
             LIMIT 1
         """, (device_id,))
@@ -1282,7 +1308,7 @@ def emit_extended_websocket_update(device_id):
             return
 
         # Send data
-        cur.execute("SELECT user_id FROM dust_devices WHERE id = ?", (device_id,))
+        cur.execute("SELECT user_id FROM dust_devices WHERE id = %s", (device_id,))
         user_row = cur.fetchone()
         if not user_row:
             return
@@ -1453,7 +1479,7 @@ def change_password():
         cur = get_db_cursor(conn)
         
         if USE_SQLITE:
-            cur.execute("SELECT password_hash FROM dust_users WHERE id = ?", (user_identity,))
+            cur.execute("SELECT password_hash FROM dust_users WHERE id = %s", (user_identity,))
         else:
             cur.execute("SELECT password_hash FROM dust_users WHERE id = %s", (user_identity,))
             
@@ -1463,7 +1489,7 @@ def change_password():
 
         new_hash = generate_password_hash(new_password)
         if USE_SQLITE:
-            cur.execute("UPDATE dust_users SET password_hash = ? WHERE id = ?", (new_hash, user_identity))
+            cur.execute("UPDATE dust_users SET password_hash = ? WHERE id = %s", (new_hash, user_identity))
         else:
             cur.execute("UPDATE dust_users SET password_hash = %s WHERE id = %s", (new_hash, user_identity))
             
@@ -1864,7 +1890,7 @@ def get_data():
         
         # Check device exists
         if USE_SQLITE:
-            cur.execute("SELECT id FROM dust_devices WHERE id = ?", (device_id,))
+            cur.execute("SELECT id FROM dust_devices WHERE id = %s", (device_id,))
         else:
             cur.execute("SELECT id FROM dust_devices WHERE id = %s", (device_id,))
         if not cur.fetchone():
@@ -1876,7 +1902,7 @@ def get_data():
             cur.execute("""
                 SELECT timestamp, pm1, pm2_5, pm4, pm10, tsp
                 FROM dust_sensor_data
-                WHERE device_id = ?
+                WHERE device_id = %s
                 ORDER BY timestamp DESC
                 LIMIT 1
             """, (device_id,))
@@ -1901,7 +1927,7 @@ def get_data():
                        AVG(pm10) as avg_pm10,
                        AVG(tsp) as avg_tsp
                 FROM dust_sensor_data
-                WHERE device_id = ? AND timestamp >= ?
+                WHERE device_id = %s AND timestamp >= %s
             """, (device_id, cutoff_time.isoformat()))
         else:
             cur.execute("""
@@ -1921,7 +1947,7 @@ def get_data():
             cur.execute("""
                 SELECT timestamp, pm1, pm2_5, pm4, pm10, tsp
                 FROM dust_sensor_data
-                WHERE device_id = ? AND timestamp >= ?
+                WHERE device_id = %s AND timestamp >= %s
                 ORDER BY timestamp ASC
             """, (device_id, cutoff_time.isoformat()))
         else:
@@ -1939,7 +1965,7 @@ def get_data():
             cur.execute("""
                 SELECT pm1, pm2_5, pm4, pm10, tsp, averaging_window
                 FROM dust_thresholds
-                WHERE device_id = ?
+                WHERE device_id = %s
                 ORDER BY timestamp DESC
                 LIMIT 1
             """, (device_id,))
@@ -2044,7 +2070,7 @@ def get_data():
                 cur.execute("""
                     SELECT *
                     FROM dust_extended_data
-                    WHERE device_id = ?
+                    WHERE device_id = %s
                     ORDER BY timestamp DESC
                     LIMIT 1
                 """, (int(device_id),))
@@ -2095,7 +2121,7 @@ def get_data():
                            voc_ppb, no2_ppb, noise_db, gps_speed_kmh, cloud_cover_percent,
                            lux, uv_index, battery_percent
                     FROM dust_extended_data
-                    WHERE device_id = ? AND timestamp >= ?
+                    WHERE device_id = %s AND timestamp >= %s
                     ORDER BY timestamp ASC
                 """, (int(device_id), cutoff_time.isoformat()))
                 ext_rows = cur.fetchall()
@@ -2526,7 +2552,7 @@ def get_device_locations():
                         ed.gps_lat, ed.gps_lon, ed.timestamp
                     FROM dust_devices d
                     LEFT JOIN dust_extended_data ed ON ed.device_id = d.id
-                    WHERE d.user_id = ? AND ed.gps_lat IS NOT NULL AND ed.gps_lon IS NOT NULL
+                    WHERE d.user_id = %s AND ed.gps_lat IS NOT NULL AND ed.gps_lon IS NOT NULL
                     ORDER BY d.id, ed.timestamp DESC
                 """, (current_user.id,))
         else:
@@ -2608,8 +2634,8 @@ def delete_user(user_id):
         cur = get_db_cursor(conn)
 
         if USE_SQLITE:
-            cur.execute("DELETE FROM dust_devices WHERE user_id = ?", (user_id,))
-            cur.execute("DELETE FROM dust_users WHERE id = ?", (user_id,))
+            cur.execute("DELETE FROM dust_devices WHERE user_id = %s", (user_id,))
+            cur.execute("DELETE FROM dust_users WHERE id = %s", (user_id,))
         else:
             cur.execute("DELETE FROM dust_devices WHERE user_id = %s", (user_id,))
             cur.execute("DELETE FROM dust_users WHERE id = %s", (user_id,))
