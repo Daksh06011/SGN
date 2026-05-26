@@ -106,7 +106,7 @@ def user_lookup_callback(_jwt_header, jwt_data):
     if not conn: return None
     try:
         if USE_SQLITE:
-            cur = conn.cursor()
+            cur = get_db_cursor(conn)
             cur.row_factory = sqlite3.Row
         else:
             cur = conn.cursor(cursor_factory=RealDictCursor)
@@ -262,10 +262,34 @@ def get_db_connection():
         logging.error(f"Database connection failed: {e}")
         raise
 
+class SQLiteCursorWrapper:
+    def __init__(self, cur):
+        self.cur = cur
+        self.rowcount = -1
+        
+    def execute(self, sql, parameters=None):
+        if parameters:
+            if isinstance(parameters, (tuple, list)):
+                sql = sql.replace('%s', '?')
+            self.cur.execute(sql, parameters)
+        else:
+            self.cur.execute(sql)
+        self.rowcount = self.cur.rowcount
+        return self
+        
+    def fetchone(self):
+        return self.cur.fetchone()
+        
+    def fetchall(self):
+        return self.cur.fetchall()
+        
+    def close(self):
+        self.cur.close()
+
 def get_db_cursor(conn):
     """Get database cursor compatible with both SQLite and PostgreSQL"""
     if USE_SQLITE:
-        return conn.cursor()
+        return SQLiteCursorWrapper(conn.cursor())
     else:
         return conn.cursor(cursor_factory=RealDictCursor)
 
@@ -381,7 +405,7 @@ def process_extended_device_data(payload, device_id, timestamp, data_source_id):
     conn = None
     try:
         conn = get_db_connection()
-        cur = conn.cursor()
+        cur = get_db_cursor(conn)
 
         # Get or validate device
         cur.execute("""
@@ -859,7 +883,7 @@ def initialize_mqtt_clients():
 
     try:
         conn = get_db_connection()
-        cur = conn.cursor()
+        cur = get_db_cursor(conn)
         cur.execute("""
             SELECT ds.id, ds.broker_url, ds.username, ds.password
             FROM dust_data_sources ds
@@ -920,7 +944,7 @@ def process_sensor_data(payload, device_id, timestamp, data_source_id):
     conn = None
     try:
         conn = get_db_connection()
-        cur = conn.cursor()
+        cur = get_db_cursor(conn)
 
         # Get or create device associated with this data source
         cur.execute("""
@@ -987,7 +1011,7 @@ def process_status_data(payload, device_id):
     conn = None
     try:
         conn = get_db_connection()
-        cur = conn.cursor()
+        cur = get_db_cursor(conn)
         cur.execute("SELECT id, user_id, has_relay FROM dust_devices WHERE deviceid = %s", (device_id,))
 
         device = cur.fetchone()
@@ -1024,7 +1048,7 @@ def process_thresholds(device_id, user_id):
     conn = None
     try:
         conn = get_db_connection()
-        cur = conn.cursor()
+        cur = get_db_cursor(conn)
 
         # Get averages over the configured window
         cur.execute("""
@@ -1315,7 +1339,7 @@ def add_data_source():
         conn = None
         try:
             conn = get_db_connection()
-            cur = conn.cursor()
+            cur = get_db_cursor(conn)
 
             if source_type == 'mqtt':
                 broker_url = data.get('broker_url')
@@ -1373,7 +1397,7 @@ def delete_data_source(source_id):
     conn = None
     try:
         conn = get_db_connection()
-        cur = conn.cursor()
+        cur = get_db_cursor(conn)
 
         # First delete any credentials referencing this source
         
@@ -1452,7 +1476,7 @@ def create_alert(device_id, alert_type, message, thresholds=None, readings=None)
     conn = None
     try:
         conn = get_db_connection()
-        cur = conn.cursor()
+        cur = get_db_cursor(conn)
 
         threshold_value = None
         measured_value = None
@@ -1484,7 +1508,7 @@ def add_data_source(source_type: str, source_config: dict):
     conn = None
     try:
         conn = get_db_connection()
-        cur = conn.cursor()
+        cur = get_db_cursor(conn)
         if source_type == 'mqtt':
             cur.execute(
                 "INSERT INTO dust_data_sources (source_type, broker_url, description) VALUES (%s, %s, %s) RETURNING id",
@@ -1757,7 +1781,7 @@ def add_device():
 
     conn = get_db_connection()
     try:
-        cur = conn.cursor()
+        cur = get_db_cursor(conn)
         # Ensure data_source exists
         cur.execute("SELECT id FROM dust_data_sources WHERE id = %s", (data_source_id,))
         if not cur.fetchone():
@@ -1793,7 +1817,7 @@ def update_device(device_id):
 
     conn = get_db_connection()
     try:
-        cur = conn.cursor()
+        cur = get_db_cursor(conn)
         # Do not allow changing data_source_id after creation!
         cur.execute("SELECT data_source_id FROM dust_devices WHERE id = %s", (device_id,))
         row = cur.fetchone()
@@ -1820,7 +1844,7 @@ def delete_device(device_id):
     conn = None
     try:
         conn = get_db_connection()
-        cur = conn.cursor()
+        cur = get_db_cursor(conn)
 
         cur.execute("DELETE FROM dust_sensor_data WHERE device_id = %s", (device_id,))
         cur.execute("DELETE FROM dust_thresholds WHERE device_id = %s", (device_id,))
@@ -2265,7 +2289,7 @@ def update_thresholds():
         conn = None
         try:
             conn = get_db_connection()
-            cur = conn.cursor()
+            cur = get_db_cursor(conn)
             cur.execute("""
                 INSERT INTO dust_thresholds (device_id, pm1, pm2_5, pm4, pm10, tsp, averaging_window)
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
@@ -2412,7 +2436,7 @@ def add_user():
         conn = None
         try:
             conn = get_db_connection()
-            cur = conn.cursor()
+            cur = get_db_cursor(conn)
             cur.execute("SELECT id FROM dust_users WHERE username = %s OR email = %s", (username, email))
             if cur.fetchone():
                 return jsonify({"status": "error", "message": "Username or email already exists"}), 400
@@ -2456,7 +2480,7 @@ def update_user(user_id):
         conn = None
         try:
             conn = get_db_connection()
-            cur = conn.cursor()
+            cur = get_db_cursor(conn)
 
             cur.execute("SELECT id FROM dust_users WHERE (username = %s OR email = %s) AND id != %s", (username, email, user_id))
             if cur.fetchone():
@@ -2595,7 +2619,7 @@ def delete_user(user_id):
     conn = None
     try:
         conn = get_db_connection()
-        cur = conn.cursor()
+        cur = get_db_cursor(conn)
 
         if USE_SQLITE:
             cur.execute("DELETE FROM dust_devices WHERE user_id = ?", (user_id,))
@@ -2691,7 +2715,7 @@ def export_csv():
     conn = None
     try:
         conn = get_db_connection()
-        cur = conn.cursor()
+        cur = get_db_cursor(conn)
 
         # Ownership validation (demo bypass)
         try:
@@ -2914,7 +2938,8 @@ if __name__ == '__main__':
                 host=os.getenv('FLASK_HOST', '0.0.0.0'),
                 port=int(os.getenv('FLASK_PORT', 5000)),
                 debug=os.getenv('FLASK_DEBUG', 'false').lower() == 'true',
-                use_reloader=False)
+                use_reloader=False,
+                allow_unsafe_werkzeug=True)
     except KeyboardInterrupt:
         logging.info("[LOCAL] Application shutting down...")
     except Exception as e:
