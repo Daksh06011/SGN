@@ -1554,40 +1554,13 @@ def user_devices():
         
         user_identity = get_jwt_identity()
 
-        # Get devices for the current user
-        if USE_SQLITE:
-            cur.execute("SELECT is_admin FROM dust_users WHERE id = ?", (user_identity,))
-        else:
-            cur.execute("SELECT is_admin FROM dust_users WHERE id = %s", (user_identity,))
-        user_data = cur.fetchone()
-        is_admin = user_data['is_admin'] if user_data else False
-
-        if is_admin:
-            # Admin users can see all devices
-            cur.execute("""
-                SELECT d.id, d.deviceid, d.name, d.has_relay, ds.source_type
-                FROM dust_devices d
-                JOIN dust_data_sources ds ON d.data_source_id = ds.id
-                ORDER BY d.created_at DESC
-            """)
-        else:
-            # Regular users can only see their own devices
-            if USE_SQLITE:
-                cur.execute("""
-                    SELECT d.id, d.deviceid, d.name, d.has_relay, ds.source_type
-                    FROM dust_devices d
-                    JOIN dust_data_sources ds ON d.data_source_id = ds.id
-                    WHERE d.user_id = ?
-                    ORDER BY d.created_at DESC
-                """, (user_identity,))
-            else:
-                cur.execute("""
-                    SELECT d.id, d.deviceid, d.name, d.has_relay, ds.source_type
-                    FROM dust_devices d
-                    JOIN dust_data_sources ds ON d.data_source_id = ds.id
-                    WHERE d.user_id = %s
-                    ORDER BY d.created_at DESC
-                """, (user_identity,))
+        # Allow all registered users to see all devices on the dashboard
+        cur.execute("""
+            SELECT d.id, d.deviceid, d.name, d.has_relay, ds.source_type
+            FROM dust_devices d
+            JOIN dust_data_sources ds ON d.data_source_id = ds.id
+            ORDER BY d.created_at DESC
+        """)
         
         devices = cur.fetchall()
 
@@ -1595,7 +1568,8 @@ def user_devices():
         return jsonify({'success': True, 'devices': [dict(d) for d in devices], 'current_user_id': user_identity})
         
     except Exception as e:
-        logging.error(f"Error fetching user devices: {e}")
+        import traceback
+        logging.error(f"Error fetching user devices: {traceback.format_exc()}")
         return jsonify({'success': False, 'error': 'Internal server error'}), 500
     finally:
         if conn:
