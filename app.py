@@ -342,6 +342,7 @@ def initialize_database():
                 pressure_hpa REAL,
                 voc_ppb REAL,
                 no2_ppb REAL,
+                noise_db REAL,
                 pm1 REAL,
                 pm2_5 REAL,
                 pm4 REAL,
@@ -351,7 +352,10 @@ def initialize_database():
                 gps_lon REAL,
                 gps_alt_m REAL,
                 gps_speed_kmh REAL,
-                cloud_cover_percent REAL
+                cloud_cover_percent REAL,
+                lux REAL,
+                uv_index REAL,
+                battery_percent REAL
             )
             """)
             conn.commit()
