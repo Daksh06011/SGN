@@ -125,7 +125,7 @@ def user_lookup_callback(_jwt_header, jwt_data):
     except Exception as e:
         logging.error(f"Error loading user: {e}")
     finally:
-        release_db_connection(conn)
+        put_db_connection(conn)
     return None
 
 logging.basicConfig(level=logging.INFO)
