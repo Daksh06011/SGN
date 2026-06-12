@@ -1304,6 +1304,137 @@ def process_hivemq_data(payload, device_id_db, timestamp, data_source_id, cur):
         logging.warning(f"[HIVEMQ] Failed to write mirrored sensor row: {e}")
 
 
+csv_write_lock = threading.Lock()
+
+def save_telemetry_to_csv(cur, device_id_db, timestamp, data_dict):
+    """
+    Saves incoming telemetry data to daily and monthly CSV files.
+    """
+    try:
+        # 1. Fetch device unique ID (deviceid) and display name
+        query = "SELECT deviceid, name FROM dust_devices WHERE id = %s"
+        if USE_SQLITE:
+            query = query.replace('%s', '?')
+        
+        # Use a new cursor from connection to avoid disturbing existing cursor state
+        temp_cur = cur.connection.cursor()
+        try:
+            temp_cur.execute(query, (device_id_db,))
+            row = temp_cur.fetchone()
+        finally:
+            temp_cur.close()
+        
+        if not row:
+            logging.warning(f"[CSV-LOG] Device ID {device_id_db} not found in database. Cannot write CSV.")
+            return
+            
+        # Extract fields based on row format (sqlite3.Row vs dict vs tuple)
+        if isinstance(row, dict):
+            device_id_str = row.get('deviceid') or 'unknown'
+            device_name = row.get('name') or 'unknown'
+        elif hasattr(row, 'keys'): # sqlite3.Row
+            device_id_str = row['deviceid'] or 'unknown'
+            device_name = row['name'] or 'unknown'
+        else: # tuple or list fallback
+            device_id_str = row[0] or 'unknown'
+            device_name = row[1] or 'unknown'
+            
+        # Clean device identifier for folder name
+        import re
+        folder_name = re.sub(r'[^a-zA-Z0-9_\-\.]', '_', device_id_str)
+        
+        # Determine paths
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        csv_base_dir = os.getenv('CSV_DATA_DIR', os.path.join(base_dir, 'csv_data'))
+        
+        daily_dir = os.path.join(csv_base_dir, folder_name, 'daily')
+        monthly_dir = os.path.join(csv_base_dir, folder_name, 'monthly')
+        
+        # Ensure directories exist
+        os.makedirs(daily_dir, exist_ok=True)
+        os.makedirs(monthly_dir, exist_ok=True)
+        
+        # Parse timestamp safely
+        if isinstance(timestamp, str):
+            try:
+                timestamp_dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+            except Exception:
+                try:
+                    timestamp_dt = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S")
+                except Exception:
+                    timestamp_dt = datetime.now()
+        else:
+            timestamp_dt = timestamp
+            
+        date_str = timestamp_dt.strftime('%Y-%m-%d')
+        month_str = timestamp_dt.strftime('%Y-%m')
+        
+        daily_file = os.path.join(daily_dir, f"{date_str}.csv")
+        monthly_file = os.path.join(monthly_dir, f"{month_str}.csv")
+        
+        # Define fields and construct data row
+        headers = [
+            'timestamp', 'device_id', 'device_name',
+            'temperature_c', 'humidity_percent', 'pressure_hpa',
+            'voc_ppb', 'no2_ppb', 'noise_db',
+            'pm1', 'pm2_5', 'pm4', 'pm10', 'tsp_um',
+            'gps_lat', 'gps_lon', 'gps_alt_m', 'gps_speed_kmh',
+            'cloud_cover_percent', 'lux', 'uv_index', 'battery_percent'
+        ]
+        
+        def get_val(key):
+            v = data_dict.get(key)
+            if v is None:
+                return ''
+            return str(v)
+            
+        row_data = [
+            timestamp_dt.isoformat() if hasattr(timestamp_dt, 'isoformat') else str(timestamp_dt),
+            device_id_str,
+            device_name,
+            get_val('temperature'),
+            get_val('humidity'),
+            get_val('pressure'),
+            get_val('voc'),
+            get_val('no2'),
+            get_val('noise_db'),
+            get_val('pm1'),
+            get_val('pm2_5'),
+            get_val('pm4'),
+            get_val('pm10'),
+            get_val('tsp_um'),
+            get_val('gps_lat'),
+            get_val('gps_lon'),
+            get_val('gps_alt'),
+            get_val('gps_speed'),
+            get_val('cloud_cover'),
+            get_val('lux'),
+            get_val('uv_index'),
+            get_val('battery_percent')
+        ]
+        
+        with csv_write_lock:
+            # Write daily CSV
+            write_header = not os.path.exists(daily_file) or os.path.getsize(daily_file) == 0
+            with open(daily_file, mode='a', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                if write_header:
+                    writer.writerow(headers)
+                writer.writerow(row_data)
+                
+            # Write monthly CSV
+            write_header = not os.path.exists(monthly_file) or os.path.getsize(monthly_file) == 0
+            with open(monthly_file, mode='a', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                if write_header:
+                    writer.writerow(headers)
+                writer.writerow(row_data)
+                
+        logging.info(f"[CSV-LOG] Successfully appended telemetry row for device {device_id_str} to CSV logs.")
+    except Exception as e:
+        logging.error(f"[CSV-LOG] Failed to write CSV logs: {e}", exc_info=True)
+
+
 def insert_extended_data(cur, device_id_db, timestamp, temperature, humidity, pressure,
                      voc, no2, noise_db, pm1, pm2_5, pm4, pm10, tsp_um,
                      gps_lat, gps_lon, gps_alt, gps_speed, cloud_cover,
@@ -1338,6 +1469,30 @@ def insert_extended_data(cur, device_id_db, timestamp, temperature, humidity, pr
         cloud_cover, lux, uv_index, battery_percent, raw_payload
     ))
     logging.info(f"[EXTENDED] Successfully inserted extended data")
+
+    # Save telemetry data to CSV files (day-wise and month-wise)
+    save_telemetry_to_csv(cur, device_id_db, timestamp, {
+        'temperature': temperature,
+        'humidity': humidity,
+        'pressure': pressure,
+        'voc': voc,
+        'no2': no2,
+        'noise_db': noise_db,
+        'pm1': pm1,
+        'pm2_5': pm2_5,
+        'pm4': pm4,
+        'pm10': pm10,
+        'tsp_um': tsp_um,
+        'gps_lat': gps_lat,
+        'gps_lon': gps_lon,
+        'gps_alt': gps_alt,
+        'gps_speed': gps_speed,
+        'cloud_cover': cloud_cover,
+        'lux': lux,
+        'uv_index': uv_index,
+        'battery_percent': battery_percent
+    })
+
 
 
 def on_mqtt_connect(client, userdata, flags, rc, properties=None):
