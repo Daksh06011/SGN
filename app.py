@@ -495,6 +495,10 @@ class SQLiteCursorWrapper:
         self.cur = cur
         self.rowcount = -1
         
+    @property
+    def connection(self):
+        return self.cur.connection
+
     def execute(self, sql, parameters=None):
         if parameters:
             if isinstance(parameters, (tuple, list)):
